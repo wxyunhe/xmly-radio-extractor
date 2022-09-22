@@ -1,0 +1,295 @@
+// ==UserScript==
+// @name                喜马拉雅音频地址提取工具 - 12redcircle
+// @namespace           cyou.12redcircle.xmly-radio-extractor
+// @match               https://www.ximalaya.com/**
+// @require             https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
+// @require             https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js
+// @require             https://cdn.jsdelivr.net/npm/jquery@1.11.2/dist/jquery.min.js
+// @require             https://cdn.jsdelivr.net/npm/sodajs@0.4.10/dist/soda.min.js
+// @require             https://cdn.jsdelivr.net/npm/layer-src@3.5.1/src/layer.min.js
+// @grant               GM_addStyle
+// @version             20220922.2-alpha
+// @author              12redcircle
+// @description         提取喜马拉雅网页上专辑和音频的播放链接
+// @contributionURL     https://afdian.net/@yuyegongmian
+// @license             WTFPL
+// ==/UserScript==
+
+
+(async function () {
+  'use strict';
+
+  /*************** 基础 *******************/
+  const SECRET_KEY = 'himalaya-'; // 证书生成秘钥
+
+  /**
+   * 获取接口签名，header 中的 xm-sign
+   * @returns
+   */
+  function getSign() {
+    var secretKey = SECRET_KEY;
+    var serverTime = window.XM_SERVER_CLOCK || 0;
+    var clientTime = Date.now();
+    var random = (t) => ~~(Math.random() * t);
+
+    return `${md5(`${secretKey}${serverTime}`)}(${random(100)})${serverTime}(${random(100)})${clientTime}`;
+  }
+
+  /**
+   * 获取服务器时间（无需xm-sign）
+   * 备用方法，如果获取不到 window.XM_SERVER_CLOCK, serverTime = await getServerTime()
+   * @returns 一个时间字符串
+   */
+  async function getServerTime() {
+    return await fetch("https://www.ximalaya.com/revision/time")
+      .then(res => res.text());
+  }
+
+  /**
+   * 获取专辑播放列表
+   * 注意：请在专辑界面调用
+   * @param {*} albumId 专辑id
+   * @param {*} pageNum 分页
+   * @returns
+   */
+  async function getAlbumTrackList(albumId, pageNum) {
+    const response = await fetch(`https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=100&sort=0`, {
+      "credentials": "include",
+      "headers": {
+        "xm-sign": getSign(),
+      },
+      "method": "GET",
+      "mode": "cors"
+    });
+
+    return response.json();
+  }
+
+  /**
+   * 获取播放url列表（需要cookie，无需xm-sign）
+   * 在任何界面均可调用
+   * https://www.ximalaya.com/sound/${trackId}
+   * @param {*} trackId 音轨id
+   * @returns
+   */
+  async function getTrackList(trackId) {
+    const response = await fetch(`https://mobile.ximalaya.com/mobile-playpage/track/v3/baseInfo/${Date.now()}?device=web&trackId=${trackId}&trackQualityLevel=1`, {
+      "credentials": "include",
+      "method": "GET",
+      "mode": "cors"
+    });
+    return response.json();
+  }
+
+  /**
+   * 获取播放url列表中的第一个直链
+   * @param {*} playList
+   * @returns
+   */
+  function getDownloadURL(playUrlList) {
+    if (playUrlList && playUrlList.length) {
+      const url = playUrlList[0].url;
+      return decrypt(url);
+    }
+    return false;
+
+    function decrypt(t) {
+      return CryptoJS.AES.decrypt({
+        ciphertext: CryptoJS.enc.Base64url.parse(t)
+      }, CryptoJS.enc.Hex.parse('aaad3e4fd540b0f79dca95606e72bf93'), {
+        mode: CryptoJS.mode.ECB,
+        padding: CryptoJS.pad.Pkcs7
+      })
+        .toString(CryptoJS.enc.Utf8);
+    }
+  }
+
+  /*************** 对链接的操作 *******************/
+  function isAlbumView() {
+    return location.href.includes('/album/');
+  }
+
+  function isTrackView() {
+    return location.href.includes('/sound/');
+  }
+
+  function getId(href) {
+    return href.substring(href.lastIndexOf('/') + 1);
+  }
+
+  // 监听网页地址变化
+  function pageViewChange$(callback) {
+
+    let lastUrl = location.href;
+    const observer = new MutationObserver(() => {
+      const url = location.href;
+      if (url !== lastUrl) {
+        lastUrl = url;
+        callback();
+      }
+    });
+
+    observer.observe(document, {
+      subtree: true,
+      childList: true
+    });
+    callback();
+  }
+
+  /*************** 数据逻辑 *******************/
+
+  async function getAlbumViewData(albumId) {
+    const albumList = [];
+
+    let pageNum = 1;
+    while (1) {
+      const {
+        data
+      } = await getAlbumTrackList(albumId, pageNum);
+      const _albumList = data.tracks;
+      if (_albumList.length === 0) {
+        break;
+      }
+      albumList.push(..._albumList);
+      pageNum++;
+    }
+
+    return albumList.map(function (album) {
+      return {
+        title: album.title,
+        index: album.index,
+        trackId: getId(album.url)
+      };
+    });
+  }
+
+  async function getTrackViewData(trackId) {
+    const {
+      trackInfo
+    } = await getTrackList(trackId);
+
+    const title = trackInfo.title;
+    const url = getDownloadURL(trackInfo.playUrlList);
+
+    return {
+      title,
+      url,
+      trackId
+    };
+  }
+
+  /*************** UI交互窗口 *******************/
+  const APPID = `__xmdownload__community__`;
+
+  $(document.body)
+    .append(`<link href="https://cdn.jsdelivr.net/npm/layer-src@3.5.1/src/theme/default/layer.min.css" rel="stylesheet">`);
+  $(document.body)
+    .append(`<div id="${APPID}"></div>`);
+
+  GM_addStyle(`
+
+    #__xmdownload__community__ {
+      line-height: 1.6;
+      padding: 10px 20px;
+    }
+
+    #__xmdownload__community__ .albumView table {
+      width: 100%;
+    }
+
+    #__xmdownload__community__ .albumView table th{
+      text-align: left;
+    }
+
+    #__xmdownload__community__ .albumView table td{
+      min-width: 80px;
+    }
+  ` );
+
+  layer.config({
+    anim: -1,
+    isOutAnim: false,
+  });
+
+
+  $(`#${APPID}`)
+    .on('click', '.download_hook', async function (item) {
+      const trackId = item.target.dataset.trackId;
+      const {
+        url
+      } = await getTrackViewData(trackId);
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        layer.alert(`获取下载链接失败，可能是因为【你正在尝试获取会员专享音频，但你目前不是会员】`);
+      }
+    });
+
+  function openWindow() {
+    layer.open({
+      type: 1,
+      shade: false,
+      title: '喜马拉雅音频地址提取',
+      area: ['600px', '300px'],
+      closeBtn: 0,
+      anim: -1,
+      shadeClose: false,
+      offset: 'lt',
+      maxmin: true,
+      content: $(`#${APPID}`)
+    });
+  }
+
+  // 打开提示窗口
+  openWindow();
+
+
+  const albumViewTpl = `
+    <div class="albumView">
+      <table>
+        <thead>
+          <th>序号</th>
+          <th>标题（点击标题打开音频）</th>
+        </thead>
+        <tbody>
+          <tr soda-repeat="item in data">
+            <td>{{item.index}}</td>
+            <td><a class="download_hook" data-track-id="{{item.trackId}}">{{item.title}}</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const trackViewTpl = `
+    <div class="trackView">
+      <a class="download_hook" data-track-id="{{data.trackId}}" target="_blank">{{data.title}}（点击打开音频）</a>
+    </div>
+  `;
+
+
+  const loadingViewTpl = `
+    正在为你获取音频列表……
+  `;
+
+  pageViewChange$(async function () {
+    $(`#${APPID}`)
+      .html(soda(loadingViewTpl, {}));
+
+    if (isAlbumView()) {
+      const albumId = getId(location.href);
+      const albumData = await getAlbumViewData(albumId);
+      $(`#${APPID}`)
+        .html(soda(albumViewTpl, {
+          data: albumData
+        }));
+    } else if (isTrackView()) {
+      const trackId = getId(location.href);
+      const trackData = await getTrackViewData(trackId);
+      $(`#${APPID}`)
+        .html(soda(trackViewTpl, {
+          data: trackData
+        }));
+    } else { }
+  });
+})();
