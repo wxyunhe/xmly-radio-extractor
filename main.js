@@ -6,9 +6,8 @@
 // @require             https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js
 // @require             https://cdn.jsdelivr.net/npm/jquery@1.11.2/dist/jquery.min.js
 // @require             https://cdn.jsdelivr.net/npm/sodajs@0.4.10/dist/soda.min.js
-// @require             https://cdn.jsdelivr.net/npm/layer-src@3.5.1/src/layer.min.js
 // @grant               GM_addStyle
-// @version             20220922.2-alpha
+// @version             20220922.3-alpha
 // @author              12redcircle
 // @description         提取喜马拉雅网页上专辑和音频的播放链接
 // @contributionURL     https://afdian.net/@yuyegongmian
@@ -179,18 +178,58 @@
   }
 
   /*************** UI交互窗口 *******************/
+
+  function addDragBehavior(selector) {
+    const Drag = document.querySelector(selector);
+
+    Drag.onmousedown = function (event) {
+      const ev = event || window.event;
+      ev?.stopPropagation();
+
+      const disX = ev.clientX - Drag.offsetLeft;
+      const disY = ev.clientY - Drag.offsetTop;
+
+      Drag.onmousemove = function (event) {
+        const ev = event || window.event;
+
+        const left = ev.clientX - disX;
+        const top = ev.clientY - disY;
+
+        Drag.style.left = left + "px";
+        Drag.style.top = top + "px";
+      };
+    };
+
+    Drag.onmouseup = function () {
+      Drag.onmousemove = null;
+    };
+  };
+
   const APPID = `__xmdownload__community__`;
 
-  $(document.body)
-    .append(`<link href="https://cdn.jsdelivr.net/npm/layer-src@3.5.1/src/theme/default/layer.min.css" rel="stylesheet">`);
   $(document.body)
     .append(`<div id="${APPID}"></div>`);
 
   GM_addStyle(`
 
     #__xmdownload__community__ {
+      position: fixed;
+      top: 0;
       line-height: 1.6;
       padding: 10px 20px;
+      background-color: #dcdcdc;
+      z-index: 20220923;
+      min-height: 100px;
+      max-height: 80vh;
+      overflow: auto;
+      background-color: rgba(240, 223, 175, 0.9);
+      border: 2px solid black;
+      box-shadow: 5px 5px 5px #000000;
+    }
+
+    #__xmdownload__community__:hover {
+      cursor: move;
+      user-select: none;
     }
 
     #__xmdownload__community__ .albumView table {
@@ -203,14 +242,11 @@
 
     #__xmdownload__community__ .albumView table td{
       min-width: 80px;
+      max-width: 300px;
     }
   ` );
 
-  layer.config({
-    anim: -1,
-    isOutAnim: false,
-  });
-
+  addDragBehavior(`#${APPID}`);
 
   $(`#${APPID}`)
     .on('click', '.download_hook', async function (item) {
@@ -221,28 +257,9 @@
       if (url) {
         window.open(url, '_blank');
       } else {
-        layer.alert(`获取下载链接失败，可能是因为【你正在尝试获取会员专享音频，但你目前不是会员】`);
+        alert(`获取下载链接失败，可能是因为【你正在尝试获取会员专享音频，但你目前不是会员】`);
       }
     });
-
-  function openWindow() {
-    layer.open({
-      type: 1,
-      shade: false,
-      title: '喜马拉雅音频地址提取',
-      area: ['600px', '300px'],
-      closeBtn: 0,
-      anim: -1,
-      shadeClose: false,
-      offset: 'lt',
-      maxmin: true,
-      content: $(`#${APPID}`)
-    });
-  }
-
-  // 打开提示窗口
-  openWindow();
-
 
   const albumViewTpl = `
     <div class="albumView">
@@ -274,7 +291,8 @@
 
   pageViewChange$(async function () {
     $(`#${APPID}`)
-      .html(soda(loadingViewTpl, {}));
+      .html(soda(loadingViewTpl, {}))
+      .show();
 
     if (isAlbumView()) {
       const albumId = getId(location.href);
@@ -290,6 +308,8 @@
         .html(soda(trackViewTpl, {
           data: trackData
         }));
-    } else { }
+    } else {
+      $(`#${APPID}`).hide();
+    }
   });
 })();
