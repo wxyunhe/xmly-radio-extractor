@@ -4,10 +4,10 @@
 // @match               https://www.ximalaya.com/**
 // @require             https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
 // @require             https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js
-// @require             https://cdn.jsdelivr.net/npm/jquery@1.11.2/dist/jquery.min.js
+// @require             https://cdn.jsdelivr.net/npm/jquery@3.6.1/dist/jquery.slim.min.js
 // @require             https://cdn.jsdelivr.net/npm/sodajs@0.4.10/dist/soda.min.js
 // @grant               GM_addStyle
-// @version             20220922.3-alpha
+// @version             20220922.4-alpha
 // @author              12redcircle
 // @description         提取喜马拉雅网页上专辑和音频的播放链接
 // @contributionURL     https://afdian.net/@yuyegongmian
@@ -109,7 +109,7 @@
   }
 
   function isTrackView() {
-    return location.href.includes('/sound/');
+    return location.href.includes('/sound/') || location.href.includes('/youshengshu/');
   }
 
   function getId(href) {
