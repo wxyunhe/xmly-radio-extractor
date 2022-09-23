@@ -7,7 +7,8 @@
 // @require             https://cdn.jsdelivr.net/npm/jquery@3.6.1/dist/jquery.slim.min.js
 // @require             https://cdn.jsdelivr.net/npm/sodajs@0.4.10/dist/soda.min.js
 // @grant               GM_addStyle
-// @version             20220922.4-alpha
+// @grant               GM_setClipboard
+// @version             20220923.1-alpha
 // @author              12redcircle
 // @description         提取喜马拉雅网页上专辑和音频的播放链接
 // @contributionURL     https://afdian.net/@yuyegongmian
@@ -261,17 +262,32 @@
       }
     });
 
+  $(`#${APPID}`)
+    .on('click', '.get_link_hook', async function (item) {
+      const trackId = item.target.dataset.trackId;
+      const {
+        url
+      } = await getTrackViewData(trackId);
+      if (url) {
+        GM_setClipboard(url, 'text/plain');
+      } else {
+        alert(`获取下载链接失败，可能是因为【你正在尝试获取会员专享音频，但你目前不是会员】`);
+      }
+    });
+
   const albumViewTpl = `
     <div class="albumView">
       <table>
         <thead>
           <th>序号</th>
           <th>标题（点击标题打开音频）</th>
+          <th></th>
         </thead>
         <tbody>
           <tr soda-repeat="item in data">
             <td>{{item.index}}</td>
             <td><a class="download_hook" data-track-id="{{item.trackId}}">{{item.title}}</a></td>
+            <td><a class="get_link_hook" data-track-id="{{item.trackId}}">复制链接</a></td>
           </tr>
         </tbody>
       </table>
@@ -281,6 +297,7 @@
   const trackViewTpl = `
     <div class="trackView">
       <a class="download_hook" data-track-id="{{data.trackId}}" target="_blank">{{data.title}}（点击打开音频）</a>
+      <a class="get_link_hook" data-track-id="{{item.trackId}}">复制链接</a>
     </div>
   `;
 
